@@ -32,14 +32,35 @@ def main() -> None:
         value=_env.get("JIRA_BASE_URL", ""),
         placeholder="https://yourcompany.atlassian.net",
     )
-    openai_key = st.text_input(
-        "OpenAI API key (optional)",
-        value=_env.get("OPENAI_API_KEY", ""),
-        type="password",
-        placeholder="sk-…  — only needed if you want AI rewrite later",
-        help="Optional. Enter now; after fetch you can click AI rewrite to use it.",
+    st.markdown("**AI provider** *(optional — for rewrite after fetch)*")
+    provider_labels = {k: v["label"] for k, v in lib.AI_PROVIDERS.items()}
+    default_provider = (_env.get("AI_PROVIDER") or "openai").strip().lower()
+    if default_provider not in lib.AI_PROVIDERS:
+        default_provider = "openai"
+    provider_label = st.selectbox(
+        "AI provider",
+        options=list(provider_labels.values()),
+        index=list(lib.AI_PROVIDERS.keys()).index(default_provider),
     )
-    st.session_state["openai_key"] = openai_key.strip()
+    provider = next(k for k, lab in provider_labels.items() if lab == provider_label)
+    meta = lib.AI_PROVIDERS[provider]
+    env_key_name = meta["env_key"]
+    key_placeholder = {
+        "openai": "sk-…",
+        "gemini": "AIza…  (Google AI Studio)",
+    }.get(provider, "API key")
+    ai_key = st.text_input(
+        f"{meta['label']} API key (optional)",
+        value=_env.get(env_key_name, ""),
+        type="password",
+        placeholder=f"{key_placeholder} — only needed for AI rewrite later",
+        help="Optional. Enter now; after fetch click Get AI rewrite.",
+        key=f"ai_key_{provider}",
+    )
+    st.session_state["ai_provider"] = provider
+    st.session_state["ai_key"] = ai_key.strip()
+    st.session_state["ai_model"] = _env.get(meta["env_model"], meta["default_model"])
+    st.session_state["ai_base"] = _env.get(meta["env_base"], meta["default_base"])
 
     st.markdown("**2. Ticket list**")
     source_mode = st.radio(
@@ -204,17 +225,22 @@ def _render_results(result: dict) -> None:
 
     st.markdown("---")
     st.markdown("**AI rewrite** *(optional)*")
-    has_key = bool(st.session_state.get("openai_key"))
+    provider = st.session_state.get("ai_provider") or "openai"
+    provider_label = lib.AI_PROVIDERS.get(provider, {}).get("label", provider)
+    has_key = bool(st.session_state.get("ai_key"))
     if not has_key:
-        st.caption("Add an OpenAI API key in step 1 above to enable this.")
+        st.caption(f"Add a {provider_label} API key in step 1 above to enable this.")
+    else:
+        st.caption(f"Will use **{provider_label}** with the key from step 1.")
     if st.button("Get AI rewrite", disabled=not has_key, type="primary"):
-        with st.spinner("Calling OpenAI and rewriting…"):
+        with st.spinner(f"Calling {provider_label} and rewriting…"):
             try:
                 structured = lib.rewrite_structured_markdown(
                     result["markdown"],
-                    api_key=st.session_state["openai_key"],
-                    model=_env.get("OPENAI_MODEL", "gpt-4o-mini"),
-                    api_base=_env.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
+                    api_key=st.session_state["ai_key"],
+                    provider=provider,
+                    model=st.session_state.get("ai_model"),
+                    api_base=st.session_state.get("ai_base"),
                 )
                 result["structured"] = structured
                 st.session_state["result"] = result

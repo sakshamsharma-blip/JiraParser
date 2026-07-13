@@ -14,7 +14,7 @@ Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **ima
 | 2 | Jira API token | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) → **API token** |
 | 3 | Jira URL | e.g. `https://yourcompany.atlassian.net` |
 | 4 | Sheet or CSV/Excel | Google Sheet (**Anyone with link → Viewer**) or upload |
-| 5 | *(Optional)* OpenAI API key | Enter at the **top** of the app — used later for **Get AI rewrite** |
+| 5 | *(Optional)* AI provider + API key | **OpenAI** or **Gemini** at the top — used for **Get AI rewrite** |
 
 ---
 
@@ -30,9 +30,12 @@ streamlit run app.py
 ```
 
 1. Fill Jira credentials  
-2. *(Optional)* Paste OpenAI API key at the top  
+2. *(Optional)* Choose **OpenAI** or **Google Gemini** and paste that API key  
 3. Add sheet/file → **Fetch & categorize** → review parsed results  
 4. *(Optional)* Click **Get AI rewrite** → structured bullet Markdown  
+
+**Gemini key:** [Google AI Studio](https://aistudio.google.com/apikey)  
+**OpenAI key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
 ---
 
@@ -52,8 +55,8 @@ Sheet / CSV
 - Shows them in the UI under each ticket
 
 ### AI rewrite
-- Optional OpenAI key is entered **at the start** (with credentials)
-- After parsed results, click **Get AI rewrite** to call the API
+- Choose provider at the top: **OpenAI** or **Google Gemini** (optional key)
+- After parsed results, click **Get AI rewrite** to call that provider’s API
 - Output: clear bullet points per category/ticket, image links kept
 - Without a key, fetch/results still work; the AI button stays disabled
 
@@ -70,9 +73,11 @@ JIRA_EMAIL=
 JIRA_API_TOKEN=
 JIRA_BASE_URL=
 GOOGLE_SHEET_URL=
-OPENAI_API_KEY=          # optional
-OPENAI_MODEL=gpt-4o-mini # optional
-OPENAI_API_BASE=https://api.openai.com/v1
+AI_PROVIDER=openai          # or gemini
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4o-mini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.0-flash
 ```
 
 ---

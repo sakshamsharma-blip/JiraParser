@@ -455,13 +455,35 @@ Rules:
 - Output valid Markdown only. No preamble.
 """
 
+AI_PROVIDERS = {
+    "openai": {
+        "label": "OpenAI",
+        "default_model": "gpt-4o-mini",
+        "default_base": "https://api.openai.com/v1",
+        "env_key": "OPENAI_API_KEY",
+        "env_model": "OPENAI_MODEL",
+        "env_base": "OPENAI_API_BASE",
+    },
+    "gemini": {
+        "label": "Google Gemini",
+        "default_model": "gemini-2.0-flash",
+        "default_base": "https://generativelanguage.googleapis.com/v1beta",
+        "env_key": "GEMINI_API_KEY",
+        "env_model": "GEMINI_MODEL",
+        "env_base": "GEMINI_API_BASE",
+    },
+}
 
-def _openai_chat(api_key: str, messages: list[dict], model: str, base_url: str) -> str:
+
+def _openai_chat(api_key: str, system: str, user: str, model: str, base_url: str) -> str:
     url = base_url.rstrip("/") + "/chat/completions"
     payload = json.dumps(
         {
             "model": model,
-            "messages": messages,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
             "temperature": 0.2,
         }
     ).encode("utf-8")
@@ -479,25 +501,91 @@ def _openai_chat(api_key: str, messages: list[dict], model: str, base_url: str) 
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:800]
-        raise RuntimeError(f"AI API HTTP {e.code}: {body}") from e
+        raise RuntimeError(f"OpenAI API HTTP {e.code}: {body}") from e
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError) as e:
-        raise RuntimeError(f"Unexpected AI response: {data!r}") from e
+        raise RuntimeError(f"Unexpected OpenAI response: {data!r}") from e
+
+
+def _gemini_generate(api_key: str, system: str, user: str, model: str, base_url: str) -> str:
+    base = base_url.rstrip("/")
+    url = (
+        f"{base}/models/{urllib.parse.quote(model, safe='')}:generateContent"
+        f"?key={urllib.parse.quote(api_key)}"
+    )
+    payload = json.dumps(
+        {
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {"temperature": 0.2},
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:800]
+        raise RuntimeError(f"Gemini API HTTP {e.code}: {body}") from e
+
+    try:
+        parts = data["candidates"][0]["content"]["parts"]
+        texts = [p.get("text", "") for p in parts if isinstance(p, dict)]
+        text = "".join(texts).strip()
+        if not text:
+            raise KeyError("empty")
+        return text
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected Gemini response: {data!r}") from e
+
+
+def _ai_complete(
+    provider: str,
+    api_key: str,
+    system: str,
+    user: str,
+    *,
+    model: str | None = None,
+    api_base: str | None = None,
+) -> str:
+    meta = AI_PROVIDERS.get(provider)
+    if not meta:
+        raise ValueError(f"Unsupported AI provider: {provider}. Use: {', '.join(AI_PROVIDERS)}")
+    model = model or meta["default_model"]
+    api_base = api_base or meta["default_base"]
+    if provider == "openai":
+        return _openai_chat(api_key, system, user, model, api_base)
+    if provider == "gemini":
+        return _gemini_generate(api_key, system, user, model, api_base)
+    raise ValueError(f"Unsupported AI provider: {provider}")
 
 
 def rewrite_structured_markdown(
     source_md: str,
     *,
     api_key: str,
-    model: str = "gpt-4o-mini",
-    api_base: str = "https://api.openai.com/v1",
+    provider: str = "openai",
+    model: str | None = None,
+    api_base: str | None = None,
 ) -> str:
-    """Turn raw changelog MD into structured bullet-point MD via OpenAI-compatible API."""
+    """Turn raw changelog MD into structured bullet-point MD (OpenAI or Gemini)."""
     if not api_key.strip():
-        raise ValueError("OpenAI API key is required for AI rewrite.")
+        raise ValueError("AI API key is required for rewrite.")
 
-    # Chunk large docs by category sections to stay within context
+    provider = (provider or "openai").strip().lower()
+    meta = AI_PROVIDERS.get(provider)
+    if not meta:
+        raise ValueError(f"Unsupported AI provider: {provider}")
+
+    model = model or meta["default_model"]
+    api_base = api_base or meta["default_base"]
+
     sections = re.split(r"(?=^## )", source_md, flags=re.MULTILINE)
     header = sections[0] if sections else ""
     body_sections = [s for s in sections[1:] if s.strip()]
@@ -520,20 +608,17 @@ def rewrite_structured_markdown(
 
     rewritten_parts: list[str] = []
     for i, chunk in enumerate(chunks, 1):
-        content = _openai_chat(
+        user = (
+            f"Rewrite this changelog section ({i}/{len(chunks)}) "
+            "into structured bullet points:\n\n" + chunk
+        )
+        content = _ai_complete(
+            provider,
             api_key,
-            [
-                {"role": "system", "content": AI_REWRITE_SYSTEM},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Rewrite this changelog section ({i}/{len(chunks)}) "
-                        "into structured bullet points:\n\n" + chunk
-                    ),
-                },
-            ],
+            AI_REWRITE_SYSTEM,
+            user,
             model=model,
-            base_url=api_base,
+            api_base=api_base,
         )
         rewritten_parts.append(content)
 
@@ -541,7 +626,7 @@ def rewrite_structured_markdown(
     out = [
         "# What changed (structured)",
         "",
-        f"_AI rewrite generated {now}._",
+        f"_AI rewrite ({meta['label']}, {model}) generated {now}._",
         "",
     ]
     out.extend(rewritten_parts)
