@@ -1,54 +1,84 @@
-# Jira → KB changelog (standalone)
+# Jira Change Log
 
-Separate tool from the Knowledge Base site. Use this repo only to pull Jira tickets from a Google Sheet and produce a categorized change document. Then use that document to update `workflow-config-pages` (or any other docs project).
+Local team tool: parse Jira links from a Google Sheet / CSV / Excel file, pull ticket details, and group them by category. Use it as a **change summary** or a **task log**.
 
-## Folder layout
+Credentials stay on each person's machine (sidebar or local `.env`). Nothing is shared by this app.
 
-```text
-jira-kb-changelog/
-  .env.example          # copy → .env (secrets stay local)
-  category_map.json     # how tickets map to KB stages
-  jira_changelog.py     # the script
-  README.md             # this file
-  output/               # generated (gitignored)
-    changes-from-jira.md
-    changes-from-jira.json
-```
-
-## One-time setup
-
-1. Create a [Jira API token](https://id.atlassian.com/manage-profile/security/api-tokens).
-2. Share the Google Sheet as **Anyone with the link → Viewer**.
-3. Configure env:
+## Quick start (for the team)
 
 ```bash
-cd ~/Documents/jira-kb-changelog
+git clone <this-repo-url>
+cd jira-kb-changelog
+
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+streamlit run app.py
+```
+
+Browser opens → enter your Jira email, API token, and base URL in the **sidebar** → paste a sheet link or upload CSV/Excel → **Fetch & categorize**.
+
+### Get a Jira API token
+
+1. Open [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
+2. Create token → paste into the sidebar (or `.env`)
+
+### Google Sheet
+
+Share as **Anyone with the link → Viewer**. Links or keys like `PROJ-123` / `…/browse/PROJ-123` anywhere in the sheet are picked up.
+
+### Optional: prefill credentials
+
+```bash
 cp .env.example .env
-# edit .env: JIRA_EMAIL, JIRA_API_TOKEN, JIRA_BASE_URL, GOOGLE_SHEET_URL
+# edit .env with your values
 ```
 
-## Run
+The UI reads `.env` if present. `.env` is gitignored.
 
-```bash
-python3 jira_changelog.py
-```
+## What you get
+
+- Tickets grouped by category (Ordering, Accession, Billing, …)
+- Short **change** text from the Jira description/summary
+- Downloads: **Markdown**, **CSV** (task log), **JSON**
+- Files also saved under `output/` on disk
 
 ## Categories
 
-No category column needed in the sheet. Matching order:
+No category column needed in the sheet. Match order:
 
 1. Jira Component  
 2. Jira Label  
 3. Keywords in summary/description (`category_map.json`)  
 4. Else → **Needs review**
 
-## After the run
+Edit `category_map.json` anytime to improve matching for your product language.
 
-1. Skim `output/changes-from-jira.md`.
-2. Open the KB project (`workflow-config-pages`) in Cursor.
-3. Ask Cursor to update support docs from that Markdown file, module by module.
-4. Review, commit, and push **in the KB project**.
+## Folder layout
 
-## Team reuse
+```text
+jira-kb-changelog/
+  app.py                 # minimal UI (Streamlit)
+  jira_lib.py            # shared logic
+  jira_changelog.py      # optional CLI
+  category_map.json
+  requirements.txt
+  .env.example
+  output/                # generated locally (gitignored)
+```
 
-Anyone with sheet access + a Jira API token can copy `.env.example` → `.env` and run the same command.
+## CLI (optional)
+
+```bash
+cp .env.example .env   # fill all fields including GOOGLE_SHEET_URL
+python3 jira_changelog.py
+```
+
+## Tips
+
+- Each teammate uses **their own** API token
+- Re-run whenever the sheet grows
+- If many tickets land in Needs review, add keywords/components to `category_map.json`
+- Sheet download fails → check link sharing is “Anyone with the link can view”
+- Jira 401 → check email + token + base URL
