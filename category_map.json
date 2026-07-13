@@ -1,0 +1,121 @@
+{
+  "_comment": "Maps Jira components, labels, and summary keywords → Knowledge Base stages. Edit anytime; no code change needed. First match wins.",
+  "stages": [
+    "Ordering",
+    "Accession",
+    "Sample Processing",
+    "Report Entry",
+    "Report Validation",
+    "QC",
+    "Report Delivery",
+    "Billing",
+    "Platform / Other"
+  ],
+  "component_map": {
+    "ordering": "Ordering",
+    "order": "Ordering",
+    "registration": "Ordering",
+    "accession": "Accession",
+    "sample accession": "Accession",
+    "sample processing": "Sample Processing",
+    "processing": "Sample Processing",
+    "worklist": "Sample Processing",
+    "report entry": "Report Entry",
+    "result entry": "Report Entry",
+    "reporting": "Report Entry",
+    "report validation": "Report Validation",
+    "validation": "Report Validation",
+    "delta check": "Report Validation",
+    "auto validation": "Report Validation",
+    "qc": "QC",
+    "quality control": "QC",
+    "report delivery": "Report Delivery",
+    "delivery": "Report Delivery",
+    "patient portal": "Report Delivery",
+    "billing": "Billing",
+    "claims": "Billing",
+    "insurance": "Billing",
+    "payer": "Billing"
+  },
+  "label_map": {
+    "ordering": "Ordering",
+    "accession": "Accession",
+    "sample-processing": "Sample Processing",
+    "report-entry": "Report Entry",
+    "report-validation": "Report Validation",
+    "qc": "QC",
+    "report-delivery": "Report Delivery",
+    "billing": "Billing"
+  },
+  "keyword_map": {
+    "Ordering": [
+      "order",
+      "ordering",
+      "registration",
+      "trf",
+      "requisition",
+      "bulk order",
+      "appointment"
+    ],
+    "Accession": [
+      "accession",
+      "barcode",
+      "label print",
+      "sample receive",
+      "accession number"
+    ],
+    "Sample Processing": [
+      "worklist",
+      "sample processing",
+      "plating",
+      "archival",
+      "batch sheet",
+      "sample logistics",
+      "tat"
+    ],
+    "Report Entry": [
+      "report entry",
+      "result entry",
+      "report filling",
+      "waiting list",
+      "reflex",
+      "rerun",
+      "pdf template"
+    ],
+    "Report Validation": [
+      "validation",
+      "delta check",
+      "auto-validation",
+      "auto validation",
+      "critical call",
+      "sign off",
+      "approve report"
+    ],
+    "QC": [
+      "qc ",
+      "quality control",
+      "levey",
+      "westgard",
+      "control run"
+    ],
+    "Report Delivery": [
+      "report delivery",
+      "whatsapp",
+      "patient login",
+      "patient portal",
+      "fax",
+      "doctor login",
+      "dispatch"
+    ],
+    "Billing": [
+      "billing",
+      "claim",
+      "payer",
+      "insurance",
+      "eligibility",
+      "rate card",
+      "pricing",
+      "invoice"
+    ]
+  }
+}
