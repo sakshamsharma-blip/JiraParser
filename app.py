@@ -45,6 +45,16 @@ def main() -> None:
     provider = next(k for k, lab in provider_labels.items() if lab == provider_label)
     meta = lib.AI_PROVIDERS[provider]
     env_key_name = meta["env_key"]
+    models = list(meta.get("models") or [meta["default_model"]])
+    env_model = _env.get(meta["env_model"], meta["default_model"])
+    if env_model not in models:
+        models = [env_model] + models
+    model = st.selectbox(
+        "AI model",
+        options=models,
+        index=models.index(env_model) if env_model in models else 0,
+        key=f"ai_model_select_{provider}",
+    )
     key_placeholder = {
         "openai": "sk-…",
         "gemini": "AIza…  (Google AI Studio)",
@@ -54,12 +64,12 @@ def main() -> None:
         value=_env.get(env_key_name, ""),
         type="password",
         placeholder=f"{key_placeholder} — only needed for AI rewrite later",
-        help="Optional. Enter now; after fetch click Get AI rewrite.",
+        help="Optional. Enter now; after fetch click Get AI rewrite. If Gemini hits quota, wait or switch model.",
         key=f"ai_key_{provider}",
     )
     st.session_state["ai_provider"] = provider
     st.session_state["ai_key"] = ai_key.strip()
-    st.session_state["ai_model"] = _env.get(meta["env_model"], meta["default_model"])
+    st.session_state["ai_model"] = model
     st.session_state["ai_base"] = _env.get(meta["env_base"], meta["default_base"])
 
     st.markdown("**2. Ticket list**")

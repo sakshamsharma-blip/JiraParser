@@ -459,6 +459,7 @@ AI_PROVIDERS = {
     "openai": {
         "label": "OpenAI",
         "default_model": "gpt-4o-mini",
+        "models": ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"],
         "default_base": "https://api.openai.com/v1",
         "env_key": "OPENAI_API_KEY",
         "env_model": "OPENAI_MODEL",
@@ -466,13 +467,40 @@ AI_PROVIDERS = {
     },
     "gemini": {
         "label": "Google Gemini",
-        "default_model": "gemini-2.0-flash",
+        # flash-lite usually has higher free-tier headroom than 2.0-flash
+        "default_model": "gemini-2.0-flash-lite",
+        "models": [
+            "gemini-2.0-flash-lite",
+            "gemini-2.0-flash",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash",
+        ],
         "default_base": "https://generativelanguage.googleapis.com/v1beta",
         "env_key": "GEMINI_API_KEY",
         "env_model": "GEMINI_MODEL",
         "env_base": "GEMINI_API_BASE",
     },
 }
+
+
+def _friendly_http_error(provider: str, code: int, body: str) -> str:
+    lower = body.lower()
+    if code == 429 or "resource_exhausted" in lower or "quota" in lower:
+        retry = None
+        m = re.search(r'"retryDelay"\s*:\s*"(\d+)s"', body)
+        if m:
+            retry = m.group(1)
+        tip = (
+            f"{provider} rate limit / free-tier quota hit. "
+            "Wait a minute and try again, switch to a lighter model "
+            "(e.g. gemini-2.0-flash-lite), or use OpenAI / a paid Gemini plan."
+        )
+        if retry:
+            tip += f" Suggested wait: ~{retry}s."
+        return tip
+    if code in (401, 403):
+        return f"{provider} auth failed (HTTP {code}). Check the API key."
+    return f"{provider} API HTTP {code}: {body[:400]}"
 
 
 def _openai_chat(api_key: str, system: str, user: str, model: str, base_url: str) -> str:
@@ -500,8 +528,8 @@ def _openai_chat(api_key: str, system: str, user: str, model: str, base_url: str
         with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:800]
-        raise RuntimeError(f"OpenAI API HTTP {e.code}: {body}") from e
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(_friendly_http_error("OpenAI", e.code, body)) from e
     try:
         return data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError, TypeError) as e:
@@ -531,8 +559,8 @@ def _gemini_generate(api_key: str, system: str, user: str, model: str, base_url:
         with urllib.request.urlopen(req, timeout=180) as resp:
             data = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")[:800]
-        raise RuntimeError(f"Gemini API HTTP {e.code}: {body}") from e
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(_friendly_http_error("Gemini", e.code, body)) from e
 
     try:
         parts = data["candidates"][0]["content"]["parts"]
@@ -553,17 +581,34 @@ def _ai_complete(
     *,
     model: str | None = None,
     api_base: str | None = None,
+    retries: int = 3,
 ) -> str:
     meta = AI_PROVIDERS.get(provider)
     if not meta:
         raise ValueError(f"Unsupported AI provider: {provider}. Use: {', '.join(AI_PROVIDERS)}")
     model = model or meta["default_model"]
     api_base = api_base or meta["default_base"]
-    if provider == "openai":
-        return _openai_chat(api_key, system, user, model, api_base)
-    if provider == "gemini":
-        return _gemini_generate(api_key, system, user, model, api_base)
-    raise ValueError(f"Unsupported AI provider: {provider}")
+
+    last_err: Exception | None = None
+    for attempt in range(retries):
+        try:
+            if provider == "openai":
+                return _openai_chat(api_key, system, user, model, api_base)
+            if provider == "gemini":
+                return _gemini_generate(api_key, system, user, model, api_base)
+            raise ValueError(f"Unsupported AI provider: {provider}")
+        except RuntimeError as e:
+            last_err = e
+            msg = str(e).lower()
+            if attempt < retries - 1 and ("rate limit" in msg or "quota" in msg or "429" in msg):
+                wait_m = re.search(r"~(\d+)s", str(e))
+                wait = int(wait_m.group(1)) if wait_m else 20 * (attempt + 1)
+                wait = min(max(wait, 5), 90)
+                time.sleep(wait)
+                continue
+            raise
+    assert last_err is not None
+    raise last_err
 
 
 def rewrite_structured_markdown(
@@ -621,6 +666,8 @@ def rewrite_structured_markdown(
             api_base=api_base,
         )
         rewritten_parts.append(content)
+        if i < len(chunks):
+            time.sleep(1.0)
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     out = [
