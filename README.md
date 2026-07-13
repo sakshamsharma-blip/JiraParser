@@ -1,14 +1,29 @@
-# Jira Change Log
+# Jira Parser
 
-Local team tool: parse Jira links from a Google Sheet / CSV / Excel file, pull ticket details, and group them by category. Use it as a **change summary** or a **task log**.
+Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions → group by category.
 
-Credentials stay on each person's machine (sidebar or local `.env`). Nothing is shared by this app.
+**Repo:** https://github.com/sakshamsharma-blip/JiraParser
 
-## Quick start (for the team)
+---
+
+## What each person needs (once)
+
+| # | What | Where to get it | Where to put it |
+|---|------|-----------------|-----------------|
+| 1 | **Jira email** | Your Atlassian login email | App field: **Email** |
+| 2 | **Jira API token** | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) | App field: **API token** |
+| 3 | **Jira URL** | Your Jira home, e.g. `https://yourcompany.atlassian.net` | App field: **Jira URL** |
+| 4 | **Sheet or file** | Google Sheet with Jira links/keys, shared as **Anyone with the link → Viewer**, **or** a CSV/Excel export | App field: **Sheet link** or **Upload** |
+
+Each teammate uses **their own** token. Never commit tokens to GitHub.
+
+---
+
+## Team setup (same for everyone)
 
 ```bash
-git clone <this-repo-url>
-cd jira-kb-changelog
+git clone git@github.com:sakshamsharma-blip/JiraParser.git
+cd JiraParser
 
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -17,68 +32,49 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Browser opens → enter your Jira email, API token, and base URL in the **sidebar** → paste a sheet link or upload CSV/Excel → **Fetch & categorize**.
+Browser opens at `http://localhost:8501`.
 
-### Get a Jira API token
+1. Fill the 3 credential fields  
+2. Paste sheet link **or** upload CSV/Excel  
+3. Click **Fetch & categorize**  
+4. Filter by category, expand tickets, download Markdown/CSV  
 
-1. Open [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
-2. Create token → paste into the sidebar (or `.env`)
+---
 
-### Google Sheet
+## Sheet rules
 
-Share as **Anyone with the link → Viewer**. Links or keys like `PROJ-123` / `…/browse/PROJ-123` anywhere in the sheet are picked up.
+- Must contain Jira keys or browse links (`PROJ-123` or `…/browse/PROJ-123`)
+- Category column **not** required (app assigns categories)
+- Google Sheet must be viewable via link
 
-### Optional: prefill credentials
+---
+
+## Optional: save credentials locally
 
 ```bash
 cp .env.example .env
-# edit .env with your values
+# fill JIRA_EMAIL, JIRA_API_TOKEN, JIRA_BASE_URL, GOOGLE_SHEET_URL
 ```
 
-The UI reads `.env` if present. `.env` is gitignored.
+`.env` is gitignored. The app prefills from it if present.
 
-## What you get
+---
 
-- Tickets grouped by category (Ordering, Accession, Billing, …)
-- Short **change** text from the Jira description/summary
-- Downloads: **Markdown**, **CSV** (task log), **JSON**
-- Files also saved under `output/` on disk
+## Output
 
-## Categories
+- On screen: categorized table + ticket details  
+- Downloads: Markdown + CSV  
+- Also saved under `output/` locally  
 
-No category column needed in the sheet. Match order:
+Categories come from Jira components → labels → keywords in `category_map.json`. Unmatched → **Needs review**.
 
-1. Jira Component  
-2. Jira Label  
-3. Keywords in summary/description (`category_map.json`)  
-4. Else → **Needs review**
+---
 
-Edit `category_map.json` anytime to improve matching for your product language.
+## Troubleshooting
 
-## Folder layout
-
-```text
-jira-kb-changelog/
-  app.py                 # minimal UI (Streamlit)
-  jira_lib.py            # shared logic
-  jira_changelog.py      # optional CLI
-  category_map.json
-  requirements.txt
-  .env.example
-  output/                # generated locally (gitignored)
-```
-
-## CLI (optional)
-
-```bash
-cp .env.example .env   # fill all fields including GOOGLE_SHEET_URL
-python3 jira_changelog.py
-```
-
-## Tips
-
-- Each teammate uses **their own** API token
-- Re-run whenever the sheet grows
-- If many tickets land in Needs review, add keywords/components to `category_map.json`
-- Sheet download fails → check link sharing is “Anyone with the link can view”
-- Jira 401 → check email + token + base URL
+| Problem | Fix |
+|---------|-----|
+| Sheet download fails | Share sheet: Anyone with the link → Viewer |
+| Jira 401 / auth error | Check email + API token + Jira URL |
+| No tickets found | Sheet must contain keys like `PROJ-123` |
+| Too many “Needs review” | Edit `category_map.json` and re-run |
