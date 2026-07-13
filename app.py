@@ -1,5 +1,8 @@
 """
-Minimal local UI — credentials, sheet, fetch (with images), optional AI rewrite.
+Minimal local UI:
+1) Credentials (+ optional OpenAI key at top)
+2) Fetch → show parsed results
+3) Optional AI rewrite button → hit API → show structured output
 """
 
 from __future__ import annotations
@@ -16,10 +19,10 @@ _env = lib.read_dotenv()
 def main() -> None:
     st.title("Jira Parser")
 
-    st.markdown("**1. Jira credentials** *(your own — not shared)*")
-    email = st.text_input("Email", value=_env.get("JIRA_EMAIL", ""), placeholder="you@company.com")
+    st.markdown("**1. Credentials** *(yours only — not shared)*")
+    email = st.text_input("Jira email", value=_env.get("JIRA_EMAIL", ""), placeholder="you@company.com")
     token = st.text_input(
-        "API token",
+        "Jira API token",
         value=_env.get("JIRA_API_TOKEN", ""),
         type="password",
         placeholder="Create at id.atlassian.com → Security → API tokens",
@@ -29,6 +32,14 @@ def main() -> None:
         value=_env.get("JIRA_BASE_URL", ""),
         placeholder="https://yourcompany.atlassian.net",
     )
+    openai_key = st.text_input(
+        "OpenAI API key (optional)",
+        value=_env.get("OPENAI_API_KEY", ""),
+        type="password",
+        placeholder="sk-…  — only needed if you want AI rewrite later",
+        help="Optional. Enter now; after fetch you can click AI rewrite to use it.",
+    )
+    st.session_state["openai_key"] = openai_key.strip()
 
     st.markdown("**2. Ticket list**")
     source_mode = st.radio(
@@ -51,6 +62,9 @@ def main() -> None:
     run = st.button("Fetch & categorize", type="primary")
 
     if run:
+        # Fresh fetch clears previous AI rewrite
+        if "result" in st.session_state:
+            st.session_state["result"].pop("structured", None)
         _run(email.strip(), token.strip(), base_url.strip().rstrip("/"), sheet_url.strip(), uploaded)
     elif "result" in st.session_state:
         _render_results(st.session_state["result"])
@@ -58,7 +72,7 @@ def main() -> None:
 
 def _run(email: str, token: str, base_url: str, sheet_url: str, uploaded) -> None:
     if not email or not token or not base_url:
-        st.error("Fill Email, API token, and Jira URL.")
+        st.error("Fill Jira email, API token, and Jira URL.")
         return
     if not sheet_url and uploaded is None:
         st.error("Paste a Google Sheet link or upload a file.")
@@ -107,7 +121,7 @@ def _run(email: str, token: str, base_url: str, sheet_url: str, uploaded) -> Non
             "failures": failures,
             "markdown": lib.build_markdown(tickets),
             "csv": lib.build_csv(tickets),
-            "structured": st.session_state.get("result", {}).get("structured"),
+            "structured": None,
         }
         status.update(
             label=f"Done — {len(tickets)} ticket(s), {n_img} image(s)",
@@ -128,7 +142,7 @@ def _render_results(result: dict) -> None:
     n_img = lib.count_images(tickets)
 
     st.markdown("---")
-    st.markdown("**Results**")
+    st.markdown("**Parsed results**")
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Tickets", len(tickets))
     c2.metric("Images", n_img)
@@ -157,42 +171,6 @@ def _render_results(result: dict) -> None:
     )
     if n_img:
         st.caption(f"Images saved under `output/images/` ({n_img} file(s)). Linked inside the Markdown.")
-
-    st.markdown("**3. AI structured summary** *(optional)*")
-    ai_key = st.text_input(
-        "OpenAI API key",
-        value=_env.get("OPENAI_API_KEY", ""),
-        type="password",
-        placeholder="sk-…  (only needed for structured rewrite)",
-    )
-    if st.button("Rewrite with AI"):
-        if not ai_key.strip():
-            st.error("Add an OpenAI API key to rewrite.")
-        else:
-            with st.spinner("Rewriting into bullet-point changelog…"):
-                try:
-                    structured = lib.rewrite_structured_markdown(
-                        result["markdown"],
-                        api_key=ai_key.strip(),
-                        model=_env.get("OPENAI_MODEL", "gpt-4o-mini"),
-                        api_base=_env.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
-                    )
-                    result["structured"] = structured
-                    st.session_state["result"] = result
-                    st.success("Structured Markdown ready.")
-                except Exception as e:  # noqa: BLE001
-                    st.error(str(e))
-
-    if result.get("structured"):
-        st.download_button(
-            "Download structured Markdown",
-            result["structured"],
-            "changes-structured.md",
-            "text/markdown",
-            key="dl_structured",
-        )
-        with st.expander("Preview structured summary"):
-            st.markdown(result["structured"])
 
     chosen = st.selectbox("Category", ["All"] + list(by_cat.keys()))
     show = tickets if chosen == "All" else by_cat.get(chosen, [])
@@ -223,6 +201,37 @@ def _render_results(result: dict) -> None:
                 img_path = lib.OUT_DIR / img["rel_path"]
                 if img_path.exists():
                     st.image(str(img_path), caption=img["filename"], use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("**AI rewrite** *(optional)*")
+    has_key = bool(st.session_state.get("openai_key"))
+    if not has_key:
+        st.caption("Add an OpenAI API key in step 1 above to enable this.")
+    if st.button("Get AI rewrite", disabled=not has_key, type="primary"):
+        with st.spinner("Calling OpenAI and rewriting…"):
+            try:
+                structured = lib.rewrite_structured_markdown(
+                    result["markdown"],
+                    api_key=st.session_state["openai_key"],
+                    model=_env.get("OPENAI_MODEL", "gpt-4o-mini"),
+                    api_base=_env.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
+                )
+                result["structured"] = structured
+                st.session_state["result"] = result
+                st.success("AI rewrite ready.")
+            except Exception as e:  # noqa: BLE001
+                st.error(str(e))
+
+    if result.get("structured"):
+        st.download_button(
+            "Download AI rewrite (Markdown)",
+            result["structured"],
+            "changes-structured.md",
+            "text/markdown",
+            key="dl_structured",
+        )
+        st.markdown("**AI rewrite preview**")
+        st.markdown(result["structured"])
 
 
 if __name__ == "__main__":

@@ -14,7 +14,7 @@ Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **ima
 | 2 | Jira API token | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) → **API token** |
 | 3 | Jira URL | e.g. `https://yourcompany.atlassian.net` |
 | 4 | Sheet or CSV/Excel | Google Sheet (**Anyone with link → Viewer**) or upload |
-| 5 | *(Optional)* OpenAI API key | Only for **Rewrite with AI** step |
+| 5 | *(Optional)* OpenAI API key | Enter at the **top** of the app — used later for **Get AI rewrite** |
 
 ---
 
@@ -29,9 +29,10 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-1. Fill Jira credentials + sheet/file  
-2. Click **Fetch & categorize** → raw Markdown + images under `output/images/`  
-3. *(Optional)* Paste OpenAI key → **Rewrite with AI** → structured bullet Markdown  
+1. Fill Jira credentials  
+2. *(Optional)* Paste OpenAI API key at the top  
+3. Add sheet/file → **Fetch & categorize** → review parsed results  
+4. *(Optional)* Click **Get AI rewrite** → structured bullet Markdown  
 
 ---
 
@@ -42,7 +43,7 @@ Sheet / CSV
    → Jira tickets (summary, description, category)
    → Image attachments downloaded to output/images/{TICKET}/
    → changes-from-jira.md  (raw, with ![…](images/…))
-   → [optional AI] changes-structured.md  (bullets: what changed)
+   → [optional] Get AI rewrite → changes-structured.md
 ```
 
 ### Images
@@ -51,9 +52,10 @@ Sheet / CSV
 - Shows them in the UI under each ticket
 
 ### AI rewrite
-- Uses your OpenAI key (or OpenAI-compatible endpoint via `.env`)
-- Turns the raw MD into clear bullet points per category/ticket
-- Keeps image markdown links in place
+- Optional OpenAI key is entered **at the start** (with credentials)
+- After parsed results, click **Get AI rewrite** to call the API
+- Output: clear bullet points per category/ticket, image links kept
+- Without a key, fetch/results still work; the AI button stays disabled
 
 ---
 
