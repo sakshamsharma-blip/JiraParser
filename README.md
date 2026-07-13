@@ -1,72 +1,77 @@
 # Jira Parser
 
-Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions → group by category.
+Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **images** → group by category → optional **AI structured summary**.
 
 **Repo:** https://github.com/sakshamsharma-blip/JiraParser
 
 ---
 
-## What each person needs (once)
+## What each person needs
 
-| # | What | Where to get it | Where to put it |
-|---|------|-----------------|-----------------|
-| 1 | **Jira email** | Your Atlassian login email | App field: **Email** |
-| 2 | **Jira API token** | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) | App field: **API token** |
-| 3 | **Jira URL** | Your Jira home, e.g. `https://yourcompany.atlassian.net` | App field: **Jira URL** |
-| 4 | **Sheet or file** | Google Sheet with Jira links/keys, shared as **Anyone with the link → Viewer**, **or** a CSV/Excel export | App field: **Sheet link** or **Upload** |
-
-Each teammate uses **their own** token. Never commit tokens to GitHub.
+| # | What | Where |
+|---|------|--------|
+| 1 | Jira email | App: **Email** |
+| 2 | Jira API token | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) → **API token** |
+| 3 | Jira URL | e.g. `https://yourcompany.atlassian.net` |
+| 4 | Sheet or CSV/Excel | Google Sheet (**Anyone with link → Viewer**) or upload |
+| 5 | *(Optional)* OpenAI API key | Only for **Rewrite with AI** step |
 
 ---
 
-## Team setup (same for everyone)
+## Team setup
 
 ```bash
 git clone git@github.com:sakshamsharma-blip/JiraParser.git
 cd JiraParser
-
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate
 pip install -r requirements.txt
-
 streamlit run app.py
 ```
 
-Browser opens at `http://localhost:8501`.
-
-1. Fill the 3 credential fields  
-2. Paste sheet link **or** upload CSV/Excel  
-3. Click **Fetch & categorize**  
-4. Filter by category, expand tickets, download Markdown/CSV  
+1. Fill Jira credentials + sheet/file  
+2. Click **Fetch & categorize** → raw Markdown + images under `output/images/`  
+3. *(Optional)* Paste OpenAI key → **Rewrite with AI** → structured bullet Markdown  
 
 ---
 
-## Sheet rules
+## Pipeline (how it works)
 
-- Must contain Jira keys or browse links (`PROJ-123` or `…/browse/PROJ-123`)
-- Category column **not** required (app assigns categories)
-- Google Sheet must be viewable via link
+```text
+Sheet / CSV
+   → Jira tickets (summary, description, category)
+   → Image attachments downloaded to output/images/{TICKET}/
+   → changes-from-jira.md  (raw, with ![…](images/…))
+   → [optional AI] changes-structured.md  (bullets: what changed)
+```
+
+### Images
+- Downloads **image** attachments from each Jira ticket
+- Embeds them in the Markdown as local relative links
+- Shows them in the UI under each ticket
+
+### AI rewrite
+- Uses your OpenAI key (or OpenAI-compatible endpoint via `.env`)
+- Turns the raw MD into clear bullet points per category/ticket
+- Keeps image markdown links in place
 
 ---
 
-## Optional: save credentials locally
+## Optional `.env`
 
 ```bash
 cp .env.example .env
-# fill JIRA_EMAIL, JIRA_API_TOKEN, JIRA_BASE_URL, GOOGLE_SHEET_URL
 ```
 
-`.env` is gitignored. The app prefills from it if present.
-
----
-
-## Output
-
-- On screen: categorized table + ticket details  
-- Downloads: Markdown + CSV  
-- Also saved under `output/` locally  
-
-Categories come from Jira components → labels → keywords in `category_map.json`. Unmatched → **Needs review**.
+```
+JIRA_EMAIL=
+JIRA_API_TOKEN=
+JIRA_BASE_URL=
+GOOGLE_SHEET_URL=
+OPENAI_API_KEY=          # optional
+OPENAI_MODEL=gpt-4o-mini # optional
+OPENAI_API_BASE=https://api.openai.com/v1
+```
 
 ---
 
@@ -74,7 +79,7 @@ Categories come from Jira components → labels → keywords in `category_map.js
 
 | Problem | Fix |
 |---------|-----|
-| Sheet download fails | Share sheet: Anyone with the link → Viewer |
-| Jira 401 / auth error | Check email + API token + Jira URL |
-| No tickets found | Sheet must contain keys like `PROJ-123` |
-| Too many “Needs review” | Edit `category_map.json` and re-run |
+| No images | Ticket may have no image attachments (inline-only embeds are limited) |
+| AI rewrite fails | Check OpenAI key / billing |
+| Sheet fails | Share as Anyone with the link → Viewer |
+| Jira 401 | Check email + token + URL |

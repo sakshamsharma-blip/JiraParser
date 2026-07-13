@@ -23,8 +23,10 @@ ROOT = Path(__file__).resolve().parent
 ENV_PATH = ROOT / ".env"
 CATEGORY_MAP_PATH = ROOT / "category_map.json"
 OUT_DIR = ROOT / "output"
+IMAGES_DIR = OUT_DIR / "images"
 
 JIRA_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]+-\d+)\b")
+IMAGE_MIME_PREFIX = "image/"
 
 ProgressCb = Callable[[str], None]
 
@@ -66,6 +68,12 @@ def http_get(url: str, headers: dict[str, str] | None = None, timeout: int = 60)
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")[:500]
         raise RuntimeError(f"HTTP {e.code}: {body}") from e
+
+
+def _safe_filename(name: str) -> str:
+    name = Path(name).name
+    cleaned = re.sub(r"[^\w.\-()+ ]+", "_", name).strip()
+    return cleaned or "image.bin"
 
 
 def rows_from_csv_text(text: str) -> list[dict[str, str]]:
@@ -166,11 +174,48 @@ def fetch_issue(base_url: str, auth: str, key: str) -> dict:
             "resolutiondate",
             "parent",
             "fixVersions",
+            "attachment",
         ]
     )
     url = f"{base_url.rstrip('/')}/rest/api/3/issue/{urllib.parse.quote(key)}?fields={fields}"
     raw = http_get(url, headers={"Authorization": auth, "Accept": "application/json"})
     return json.loads(raw.decode("utf-8"))
+
+
+def download_issue_images(issue: dict, auth: str) -> list[dict]:
+    """Download image attachments for one issue into output/images/{KEY}/."""
+    key = issue.get("key") or "UNKNOWN"
+    attachments = (issue.get("fields") or {}).get("attachment") or []
+    saved: list[dict] = []
+    ticket_dir = IMAGES_DIR / key
+    for att in attachments:
+        mime = (att.get("mimeType") or "").lower()
+        if not mime.startswith(IMAGE_MIME_PREFIX):
+            continue
+        content_url = att.get("content")
+        filename = _safe_filename(att.get("filename") or f"{att.get('id', 'image')}.png")
+        if not content_url:
+            continue
+        try:
+            data = http_get(content_url, headers={"Authorization": auth, "Accept": "*/*"})
+        except Exception:  # noqa: BLE001
+            continue
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        dest = ticket_dir / filename
+        # Avoid overwrite collisions
+        if dest.exists():
+            dest = ticket_dir / f"{att.get('id', 'x')}_{filename}"
+        dest.write_bytes(data)
+        rel = dest.relative_to(OUT_DIR).as_posix()
+        saved.append(
+            {
+                "filename": dest.name,
+                "rel_path": rel,
+                "mime": mime,
+                "id": str(att.get("id") or ""),
+            }
+        )
+    return saved
 
 
 def load_category_map(path: Path | None = None) -> dict:
@@ -232,6 +277,7 @@ def normalize_issue(issue: dict, cmap: dict, base_url: str) -> dict:
         "resolved": fields.get("resolutiondate"),
         "category": stage,
         "category_reason": reason,
+        "images": [],
     }
 
 
@@ -252,6 +298,7 @@ def fetch_and_categorize(
     cmap: dict | None = None,
     progress: ProgressCb | None = None,
     delay_sec: float = 0.15,
+    download_images: bool = True,
 ) -> tuple[list[dict], list[str]]:
     cmap = cmap or load_category_map()
     auth = jira_auth_header(email, token)
@@ -264,7 +311,10 @@ def fetch_and_categorize(
             progress(f"Fetching {i}/{total}: {key}")
         try:
             issue = fetch_issue(base_url, auth, key)
-            tickets.append(normalize_issue(issue, cmap, base_url))
+            ticket = normalize_issue(issue, cmap, base_url)
+            if download_images:
+                ticket["images"] = download_issue_images(issue, auth)
+            tickets.append(ticket)
         except Exception as e:  # noqa: BLE001
             failures.append(f"{key}: {e}")
         time.sleep(delay_sec)
@@ -332,6 +382,13 @@ def build_markdown(tickets: list[dict], cmap: dict | None = None) -> str:
                 lines.append("")
                 lines.append(desc)
                 lines.append("")
+            images = t.get("images") or []
+            if images:
+                lines.append("**Screenshots / images:**")
+                lines.append("")
+                for img in images:
+                    lines.append(f"![{img['filename']}]({img['rel_path']})")
+                    lines.append("")
             lines.append("---")
             lines.append("")
     return "\n".join(lines)
@@ -385,3 +442,115 @@ def save_outputs(tickets: list[dict], failures: list[str], cmap: dict | None = N
         encoding="utf-8",
     )
     return md_path, json_path
+
+
+AI_REWRITE_SYSTEM = """You rewrite raw Jira change notes into a clear support/product changelog.
+
+Rules:
+- Group by the existing ## category headings.
+- For each ticket, keep the key and title.
+- Use short bullet points only: What changed, Who it affects / where in product (if known), Caveats (if any).
+- Keep any markdown image links exactly as they appear (![...](...)). Put them under the ticket they belong to.
+- Do not invent features that are not in the source.
+- Output valid Markdown only. No preamble.
+"""
+
+
+def _openai_chat(api_key: str, messages: list[dict], model: str, base_url: str) -> str:
+    url = base_url.rstrip("/") + "/chat/completions"
+    payload = json.dumps(
+        {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")[:800]
+        raise RuntimeError(f"AI API HTTP {e.code}: {body}") from e
+    try:
+        return data["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError) as e:
+        raise RuntimeError(f"Unexpected AI response: {data!r}") from e
+
+
+def rewrite_structured_markdown(
+    source_md: str,
+    *,
+    api_key: str,
+    model: str = "gpt-4o-mini",
+    api_base: str = "https://api.openai.com/v1",
+) -> str:
+    """Turn raw changelog MD into structured bullet-point MD via OpenAI-compatible API."""
+    if not api_key.strip():
+        raise ValueError("OpenAI API key is required for AI rewrite.")
+
+    # Chunk large docs by category sections to stay within context
+    sections = re.split(r"(?=^## )", source_md, flags=re.MULTILINE)
+    header = sections[0] if sections else ""
+    body_sections = [s for s in sections[1:] if s.strip()]
+
+    if not body_sections:
+        chunks = [source_md]
+    elif len(source_md) < 24000:
+        chunks = [source_md]
+    else:
+        chunks = []
+        buf = header
+        for sec in body_sections:
+            if len(buf) + len(sec) > 24000 and buf.strip():
+                chunks.append(buf)
+                buf = header + "\n" + sec
+            else:
+                buf += sec
+        if buf.strip():
+            chunks.append(buf)
+
+    rewritten_parts: list[str] = []
+    for i, chunk in enumerate(chunks, 1):
+        content = _openai_chat(
+            api_key,
+            [
+                {"role": "system", "content": AI_REWRITE_SYSTEM},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Rewrite this changelog section ({i}/{len(chunks)}) "
+                        "into structured bullet points:\n\n" + chunk
+                    ),
+                },
+            ],
+            model=model,
+            base_url=api_base,
+        )
+        rewritten_parts.append(content)
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    out = [
+        "# What changed (structured)",
+        "",
+        f"_AI rewrite generated {now}._",
+        "",
+    ]
+    out.extend(rewritten_parts)
+    text = "\n\n".join(out).strip() + "\n"
+    path = OUT_DIR / "changes-structured.md"
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return text
+
+
+def count_images(tickets: list[dict]) -> int:
+    return sum(len(t.get("images") or []) for t in tickets)
