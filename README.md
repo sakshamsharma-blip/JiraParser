@@ -1,6 +1,6 @@
 # Jira Parser
 
-Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **images** → group by category → optional **AI structured summary**.
+Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **images** → group by category → export a **PDF with screenshots embedded** (Markdown/CSV also available). Optional AI rewrite later.
 
 **Repo:** https://github.com/sakshamsharma-blip/JiraParser
 
@@ -32,7 +32,8 @@ streamlit run app.py
 1. Fill Jira credentials  
 2. *(Optional)* Choose **OpenAI** or **Google Gemini** and paste that API key  
 3. Add sheet/file → **Fetch & categorize** → review parsed results  
-4. *(Optional)* Click **Get AI rewrite** → structured bullet Markdown  
+4. **Download PDF** (screenshots embedded) — Markdown/CSV also available  
+5. *(Optional)* Click **Get AI rewrite** → structured bullet Markdown  
 
 **Gemini key:** [Google AI Studio](https://aistudio.google.com/apikey)  
 **OpenAI key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
@@ -45,15 +46,16 @@ streamlit run app.py
 Sheet / CSV
    → Jira tickets (summary, description, category)
    → Image attachments downloaded to output/images/{TICKET}/
-   → changes-from-jira.md  (raw, with ![…](images/…))
+   → changes-from-jira.pdf  (images embedded in the document)
+   → changes-from-jira.md / .csv also available
    → [optional] Get AI rewrite → changes-structured.md
 ```
 
 ### Images
 - Downloads **image** attachments from each Jira ticket
-- Embeds them in the Markdown as local relative links
-- Shows them in the UI under each ticket
-
+- **Embeds them in the PDF** (actual pictures, not just names)
+- Also shows them in the UI under each ticket
+- Raw image files remain under `output/images/`
 ### AI rewrite
 - Choose provider at the top: **OpenAI** or **Google Gemini** (optional key)
 - After parsed results, click **Get AI rewrite** to call that provider’s API

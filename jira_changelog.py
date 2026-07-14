@@ -37,11 +37,12 @@ def main() -> None:
         base_url=env["JIRA_BASE_URL"],
         progress=progress,
     )
-    md_path, json_path = lib.save_outputs(tickets, failures)
+    md_path, json_path, pdf_path = lib.save_outputs(tickets, failures)
     needs = sum(1 for t in tickets if t["category"] == "Needs review")
     print("")
     print(f"Wrote {md_path}")
     print(f"Wrote {json_path}")
+    print(f"Wrote {pdf_path}")
     print(f"Fetched: {len(tickets)}  Failed: {len(failures)}  Needs review: {needs}")
 
 

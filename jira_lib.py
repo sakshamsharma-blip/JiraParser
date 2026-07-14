@@ -421,11 +421,136 @@ def build_csv(tickets: list[dict]) -> str:
     return buf.getvalue()
 
 
-def save_outputs(tickets: list[dict], failures: list[str], cmap: dict | None = None) -> tuple[Path, Path]:
+def build_pdf(tickets: list[dict], cmap: dict | None = None) -> bytes:
+    """Build a PDF changelog with screenshots embedded (not just filenames)."""
+    try:
+        from fpdf import FPDF
+        from fpdf.enums import XPos, YPos
+    except ImportError as e:
+        raise RuntimeError("fpdf2 is required for PDF export. Run: pip install -r requirements.txt") from e
+
+    cmap = cmap or load_category_map()
+    by_cat = group_by_category(tickets, cmap)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    class _PDF(FPDF):
+        def footer(self) -> None:
+            self.set_y(-12)
+            self.set_font("Helvetica", "I", 8)
+            self.set_text_color(120, 120, 120)
+            self.cell(0, 8, f"Page {self.page_no()}/{{nb}}", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    def write(pdf: "_PDF", text: str, *, size: int = 10, bold: bool = False, color=(0, 0, 0)) -> None:
+        pdf.set_x(pdf.l_margin)
+        style = "B" if bold else ""
+        pdf.set_font("Helvetica", style, size)
+        pdf.set_text_color(*color)
+        pdf.multi_cell(0, max(5, size * 0.55), _pdf_safe(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf = _PDF(format="A4")
+    pdf.alias_nb_pages()
+    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf.set_margins(14, 14, 14)
+    pdf.add_page()
+
+    write(pdf, "Product changes from Jira", size=18, bold=True)
+    write(pdf, f"Generated {now}", size=10, color=(90, 90, 90))
+    write(
+        pdf,
+        f"Total tickets: {len(tickets)}  |  Images: {count_images(tickets)}",
+        size=10,
+        color=(90, 90, 90),
+    )
+    pdf.ln(3)
+
+    write(pdf, "Category counts", size=12, bold=True)
+    for cat, items in by_cat.items():
+        write(pdf, f"- {cat}: {len(items)}", size=10)
+    pdf.ln(4)
+
+    for cat, items in by_cat.items():
+        pdf.set_x(pdf.l_margin)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_fill_color(235, 235, 235)
+        pdf.set_text_color(0, 0, 0)
+        pdf.multi_cell(0, 8, _pdf_safe(cat), fill=True, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.ln(2)
+
+        for t in items:
+            write(pdf, f"{t.get('key') or ''} — {t.get('summary') or ''}", size=11, bold=True)
+
+            meta_bits = [
+                f"Type: {t.get('type') or '—'}",
+                f"Status: {t.get('status') or '—'}",
+            ]
+            if t.get("components"):
+                meta_bits.append("Components: " + ", ".join(t["components"]))
+            write(pdf, "  |  ".join(meta_bits), size=9, color=(80, 80, 80))
+
+            change = (t.get("change_summary") or "").strip()
+            if change:
+                write(pdf, "Change", size=10, bold=True)
+                write(pdf, change, size=10)
+
+            desc = (t.get("description") or "").strip()
+            if desc and desc != change:
+                if len(desc) > 1500:
+                    desc = desc[:1500].rstrip() + "…"
+                write(pdf, "Description", size=10, bold=True)
+                write(pdf, desc, size=10)
+
+            images = t.get("images") or []
+            if images:
+                write(pdf, "Screenshots", size=10, bold=True)
+                usable_w = pdf.w - pdf.l_margin - pdf.r_margin
+                for img in images:
+                    img_path = OUT_DIR / img["rel_path"]
+                    if not img_path.exists():
+                        continue
+                    if pdf.get_y() > pdf.h - 60:
+                        pdf.add_page()
+                    try:
+                        pdf.set_x(pdf.l_margin)
+                        pdf.image(str(img_path), w=min(170, usable_w))
+                        pdf.ln(4)
+                    except Exception:  # noqa: BLE001
+                        write(pdf, f"(Could not embed {img.get('filename')})", size=9, color=(120, 120, 120))
+
+            if t.get("url"):
+                write(pdf, t["url"], size=8, color=(50, 90, 160))
+
+            pdf.ln(2)
+            y = pdf.get_y()
+            pdf.set_draw_color(210, 210, 210)
+            pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+            pdf.ln(5)
+
+    return bytes(pdf.output())
+
+
+def _pdf_safe(text: str) -> str:
+    """FPDF core fonts are Latin-1; replace unsupported chars."""
+    if not text:
+        return ""
+    return (
+        text.replace("\u2014", "-")
+        .replace("\u2013", "-")
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+        .replace("\u2026", "...")
+        .encode("latin-1", errors="replace")
+        .decode("latin-1")
+    )
+
+
+def save_outputs(tickets: list[dict], failures: list[str], cmap: dict | None = None) -> tuple[Path, Path, Path]:
     cmap = cmap or load_category_map()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     md_path = OUT_DIR / "changes-from-jira.md"
     json_path = OUT_DIR / "changes-from-jira.json"
+    pdf_path = OUT_DIR / "changes-from-jira.pdf"
     md_path.write_text(build_markdown(tickets, cmap), encoding="utf-8")
     json_path.write_text(
         json.dumps(
@@ -441,7 +566,9 @@ def save_outputs(tickets: list[dict], failures: list[str], cmap: dict | None = N
         + "\n",
         encoding="utf-8",
     )
-    return md_path, json_path
+    pdf_path.write_bytes(build_pdf(tickets, cmap))
+    return md_path, json_path, pdf_path
+
 
 
 AI_REWRITE_SYSTEM = """You rewrite raw Jira change notes into a clear support/product changelog.

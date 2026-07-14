@@ -145,6 +145,7 @@ def _run(email: str, token: str, base_url: str, sheet_url: str, uploaded) -> Non
             download_images=True,
         )
         progress.progress(1.0, text="Done")
+        status.write("Building PDF with images…")
         lib.save_outputs(tickets, failures)
         n_img = lib.count_images(tickets)
         st.session_state["result"] = {
@@ -152,6 +153,7 @@ def _run(email: str, token: str, base_url: str, sheet_url: str, uploaded) -> Non
             "failures": failures,
             "markdown": lib.build_markdown(tickets),
             "csv": lib.build_csv(tickets),
+            "pdf": lib.build_pdf(tickets),
             "structured": None,
         }
         status.update(
@@ -171,6 +173,12 @@ def _render_results(result: dict) -> None:
     failures = result["failures"]
     by_cat = lib.group_by_category(tickets)
     n_img = lib.count_images(tickets)
+    if not result.get("pdf"):
+        try:
+            result["pdf"] = lib.build_pdf(tickets)
+            st.session_state["result"] = result
+        except Exception as e:  # noqa: BLE001
+            st.warning(f"PDF not ready yet: {e}")
 
     st.markdown("---")
     st.markdown("**Parsed results**")
@@ -185,15 +193,24 @@ def _render_results(result: dict) -> None:
             for f in failures:
                 st.text(f)
 
-    d1, d2 = st.columns(2)
-    d1.download_button(
-        "Download Markdown (raw)",
+    d1, d2, d3 = st.columns(3)
+    if result.get("pdf"):
+        d1.download_button(
+            "Download PDF",
+            result["pdf"],
+            "changes-from-jira.pdf",
+            "application/pdf",
+            key="dl_pdf",
+            type="primary",
+        )
+    d2.download_button(
+        "Download Markdown",
         result["markdown"],
         "changes-from-jira.md",
         "text/markdown",
         key="dl_md",
     )
-    d2.download_button(
+    d3.download_button(
         "Download CSV",
         result["csv"],
         "changes-from-jira.csv",
@@ -201,7 +218,9 @@ def _render_results(result: dict) -> None:
         key="dl_csv",
     )
     if n_img:
-        st.caption(f"Images saved under `output/images/` ({n_img} file(s)). Linked inside the Markdown.")
+        st.caption(
+            f"{n_img} image(s) embedded in the PDF. Also saved under `output/images/`."
+        )
 
     chosen = st.selectbox("Category", ["All"] + list(by_cat.keys()))
     show = tickets if chosen == "All" else by_cat.get(chosen, [])
