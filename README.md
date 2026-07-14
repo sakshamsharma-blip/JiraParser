@@ -6,105 +6,95 @@ Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **ima
 
 ---
 
-## Deploy for the team (recommended)
+## Choose how to run
 
-Hosted on **Streamlit Community Cloud** so people only need a link — no local install.
+| | **Option A — Use deployed app** | **Option B — Run locally** |
+|---|--------------------------------|------------------------------|
+| Best for | Most of the team (no setup) | Devs / offline / custom changes |
+| Link | https://jiraparser.streamlit.app/ | http://localhost:8501 after setup |
+| Install | None | Python + `pip install` |
 
-1. Open [share.streamlit.io](https://share.streamlit.io/) and sign in with GitHub  
-2. **Create app** → select repo `sakshamsharma-blip/JiraParser`  
-3. Branch: `main` · Main file: `app.py` · Deploy  
-4. Share the public URL (e.g. `https://jiraparser-….streamlit.app`)
+---
 
-**How teammates use it**
-1. Open the link  
-2. Enter **their own** Jira email, API token, Jira URL  
-3. Paste sheet link (Anyone with link → Viewer) or upload CSV/Excel  
-4. **Fetch & categorize** → **Download PDF**  
+## Option A — Use the deployed app (recommended)
 
-Do **not** put everyone’s Jira tokens in Streamlit Secrets. Each person types their own credentials in the form (session-only). Secrets are only needed if you want optional shared defaults.
+**Open:** https://jiraparser.streamlit.app/
+
+1. Enter **your own** Jira email, API token, and Jira URL  
+2. Paste a **Google Sheet link** (Anyone with link → Viewer) **or** upload CSV/Excel  
+3. Click **Fetch & categorize**  
+4. **Download PDF** (screenshots embedded) — Markdown/CSV also available  
+5. *(Optional)* Add an AI key at the top → **Get AI rewrite** after fetch  
 
 **Notes**
-- Free Streamlit Cloud apps can sleep when idle; first open may take ~30s  
-- Google Sheet must stay shareable via link so the server can download it  
-- For private company-only hosting later: Docker / internal VM also works  
+- Credentials stay in your browser session only — not stored on the server  
+- First load after idle can take ~30 seconds (free Streamlit tier)  
+- Each person uses **their own** Jira API token  
 
 ---
 
-## What each person needs
+## Option B — Run locally
 
-| # | What | Where |
-|---|------|--------|
-| 1 | Jira email | App: **Email** |
-| 2 | Jira API token | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) → **API token** |
-| 3 | Jira URL | e.g. `https://yourcompany.atlassian.net` |
-| 4 | Sheet or CSV/Excel | Google Sheet (**Anyone with link → Viewer**) or upload |
-| 5 | *(Optional)* AI provider + API key | **OpenAI** or **Gemini** at the top — used for **Get AI rewrite** |
-
----
-
-## Team setup
+### 1. Clone and install
 
 ```bash
 git clone git@github.com:sakshamsharma-blip/JiraParser.git
 cd JiraParser
+
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+```
+
+### 2. Start the app
+
+```bash
 streamlit run app.py
 ```
 
-1. Fill Jira credentials  
-2. *(Optional)* Choose **OpenAI** or **Google Gemini** and paste that API key  
-3. Add sheet/file → **Fetch & categorize** → review parsed results  
-4. **Download PDF** (screenshots embedded) — Markdown/CSV also available  
-5. *(Optional)* Click **Get AI rewrite** → structured bullet Markdown  
+Opens at **http://localhost:8501**
 
-**Gemini key:** [Google AI Studio](https://aistudio.google.com/apikey)  
-**OpenAI key:** [platform.openai.com/api-keys](https://platform.openai.com/api-keys)
+### 3. Use the app
+
+Same steps as Option A: fill credentials → sheet/file → **Fetch & categorize** → **Download PDF**.
+
+### Optional — prefill fields from `.env`
+
+```bash
+cp .env.example .env
+# edit .env with your values (never commit this file)
+```
+
+The UI reads `.env` if present. Useful so you don’t retype Jira URL or sheet link every time.
 
 ---
 
-## Pipeline (how it works)
+## What you need (both options)
+
+| # | What | Where to get it |
+|---|------|-----------------|
+| 1 | Jira email | Your Atlassian login |
+| 2 | Jira API token | [Create token](https://id.atlassian.com/manage-profile/security/api-tokens) |
+| 3 | Jira URL | e.g. `https://yourcompany.atlassian.net` |
+| 4 | Sheet or file | Google Sheet (**Anyone with link → Viewer**) or CSV/Excel upload |
+| 5 | *(Optional)* AI key | [OpenAI](https://platform.openai.com/api-keys) or [Gemini](https://aistudio.google.com/apikey) — only for **Get AI rewrite** |
+
+---
+
+## What you get
 
 ```text
 Sheet / CSV
    → Jira tickets (summary, description, category)
-   → Image attachments downloaded to output/images/{TICKET}/
+   → Image attachments saved under output/images/{TICKET}/
    → changes-from-jira.pdf  (images embedded in the document)
    → changes-from-jira.md / .csv also available
    → [optional] Get AI rewrite → changes-structured.md
 ```
 
-### Images
-- Downloads **image** attachments from each Jira ticket
-- **Embeds them in the PDF** (actual pictures, not just names)
-- Also shows them in the UI under each ticket
-- Raw image files remain under `output/images/`
-### AI rewrite
-- Choose provider at the top: **OpenAI** or **Google Gemini** (optional key)
-- After parsed results, click **Get AI rewrite** to call that provider’s API
-- Output: clear bullet points per category/ticket, image links kept
-- Without a key, fetch/results still work; the AI button stays disabled
-
----
-
-## Optional `.env`
-
-```bash
-cp .env.example .env
-```
-
-```
-JIRA_EMAIL=
-JIRA_API_TOKEN=
-JIRA_BASE_URL=
-GOOGLE_SHEET_URL=
-AI_PROVIDER=openai          # or gemini
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o-mini
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
-```
+- **PDF** — actual screenshots in the document, not just filenames  
+- **Categories** — from Jira components → labels → keywords (`category_map.json`)  
+- **AI rewrite** — optional; fetch + PDF work without it  
 
 ---
 
@@ -112,7 +102,17 @@ GEMINI_MODEL=gemini-2.0-flash
 
 | Problem | Fix |
 |---------|-----|
-| No images | Ticket may have no image attachments (inline-only embeds are limited) |
-| AI rewrite fails | Check OpenAI key / billing |
-| Sheet fails | Share as Anyone with the link → Viewer |
-| Jira 401 | Check email + token + URL |
+| Deployed app slow / blank on first open | Wait ~30s and refresh (free tier wake-up) |
+| Sheet download fails | Share sheet as **Anyone with the link → Viewer** |
+| Jira 401 / auth error | Check email + API token + Jira URL |
+| No images in PDF | Ticket may have no image attachments |
+| AI rewrite fails | Check API key / quota; try `gemini-2.0-flash-lite` for Gemini free tier |
+| Local: `localhost` connection error | Run `streamlit run app.py` again in the project folder |
+
+---
+
+## For admins (redeploy / update hosted app)
+
+- **Manage app:** https://share.streamlit.io/  
+- **Repo:** `sakshamsharma-blip/JiraParser` · branch `main` · entry file `streamlit_app.py` or `app.py`  
+- Push to `main` on GitHub → Streamlit redeploys automatically  
