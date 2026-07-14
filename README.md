@@ -6,6 +6,30 @@ Parse Jira links from a Google Sheet / CSV / Excel → pull descriptions + **ima
 
 ---
 
+## Deploy for the team (recommended)
+
+Hosted on **Streamlit Community Cloud** so people only need a link — no local install.
+
+1. Open [share.streamlit.io](https://share.streamlit.io/) and sign in with GitHub  
+2. **Create app** → select repo `sakshamsharma-blip/JiraParser`  
+3. Branch: `main` · Main file: `app.py` · Deploy  
+4. Share the public URL (e.g. `https://jiraparser-….streamlit.app`)
+
+**How teammates use it**
+1. Open the link  
+2. Enter **their own** Jira email, API token, Jira URL  
+3. Paste sheet link (Anyone with link → Viewer) or upload CSV/Excel  
+4. **Fetch & categorize** → **Download PDF**  
+
+Do **not** put everyone’s Jira tokens in Streamlit Secrets. Each person types their own credentials in the form (session-only). Secrets are only needed if you want optional shared defaults.
+
+**Notes**
+- Free Streamlit Cloud apps can sleep when idle; first open may take ~30s  
+- Google Sheet must stay shareable via link so the server can download it  
+- For private company-only hosting later: Docker / internal VM also works  
+
+---
+
 ## What each person needs
 
 | # | What | Where |

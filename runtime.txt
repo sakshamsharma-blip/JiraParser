@@ -1,0 +1,3 @@
+# Runtime for Streamlit Community Cloud / containers.
+# Python packages live in requirements.txt
+python-3.11

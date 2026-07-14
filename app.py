@@ -18,6 +18,10 @@ _env = lib.read_dotenv()
 
 def main() -> None:
     st.title("Jira Parser")
+    st.caption(
+        "Enter your own Jira details below (kept in this browser session only). "
+        "Then fetch tickets and download a PDF with screenshots."
+    )
 
     st.markdown("**1. Credentials** *(yours only — not shared)*")
     email = st.text_input("Jira email", value=_env.get("JIRA_EMAIL", ""), placeholder="you@company.com")
