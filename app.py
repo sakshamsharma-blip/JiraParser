@@ -193,9 +193,25 @@ def _render_results(result: dict) -> None:
     c4.metric("Failed", len(failures))
 
     if failures:
-        with st.expander(f"Failed ({len(failures)})"):
-            for f in failures:
+        # Surface the root cause immediately when nothing succeeded
+        if not tickets:
+            st.error(
+                "No tickets were fetched. Usually this means wrong Jira email/token/URL. "
+                "Expand **Failed** below for the exact error."
+            )
+            st.code(failures[0], language=None)
+            if any("401" in f for f in failures):
+                st.info(
+                    "Create a fresh API token: "
+                    "https://id.atlassian.com/manage-profile/security/api-tokens "
+                    "— use the same email you type in the form, and Jira URL like "
+                    "`https://crelio.atlassian.net` (no `/browse/...`)."
+                )
+        with st.expander(f"Failed ({len(failures)})", expanded=not tickets):
+            for f in failures[:50]:
                 st.text(f)
+            if len(failures) > 50:
+                st.caption(f"…and {len(failures) - 50} more")
 
     d1, d2, d3 = st.columns(3)
     if result.get("pdf"):

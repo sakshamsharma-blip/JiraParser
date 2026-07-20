@@ -302,10 +302,14 @@ def fetch_and_categorize(
 ) -> tuple[list[dict], list[str]]:
     cmap = cmap or load_category_map()
     auth = jira_auth_header(email, token)
+    # Normalize common URL mistakes from the form
+    if base_url and "://" not in base_url:
+        base_url = "https://" + base_url
     base_url = base_url.rstrip("/")
     tickets: list[dict] = []
     failures: list[str] = []
     total = len(keys)
+
     for i, key in enumerate(keys, 1):
         if progress:
             progress(f"Fetching {i}/{total}: {key}")
@@ -313,12 +317,38 @@ def fetch_and_categorize(
             issue = fetch_issue(base_url, auth, key)
             ticket = normalize_issue(issue, cmap, base_url)
             if download_images:
-                ticket["images"] = download_issue_images(issue, auth)
+                try:
+                    ticket["images"] = download_issue_images(issue, auth)
+                except Exception as img_err:  # noqa: BLE001
+                    ticket["images"] = []
+                    failures.append(f"{key} (images only): {img_err}")
             tickets.append(ticket)
         except Exception as e:  # noqa: BLE001
-            failures.append(f"{key}: {e}")
+            failures.append(f"{key}: {_friendly_jira_error(e)}")
         time.sleep(delay_sec)
     return tickets, failures
+
+
+def _friendly_jira_error(err: Exception) -> str:
+    msg = str(err)
+    lower = msg.lower()
+    if "401" in msg or "unauthorized" in lower:
+        return (
+            "HTTP 401 Unauthorized — check Jira email + API token "
+            "(token may have expired; create a new one at "
+            "https://id.atlassian.com/manage-profile/security/api-tokens). "
+            f"Details: {msg[:300]}"
+        )
+    if "403" in msg or "forbidden" in lower:
+        return (
+            "HTTP 403 Forbidden — your account may not have access to this ticket, "
+            f"or the Jira URL is wrong. Details: {msg[:300]}"
+        )
+    if "404" in msg:
+        return f"HTTP 404 — ticket not found or wrong Jira site. Details: {msg[:300]}"
+    if "timed out" in lower or "timeout" in lower:
+        return f"Timed out reaching Jira. Try again. Details: {msg[:300]}"
+    return msg
 
 
 def group_by_category(tickets: list[dict], cmap: dict | None = None) -> dict[str, list[dict]]:
